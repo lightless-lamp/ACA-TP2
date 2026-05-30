@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from src.baseline.model import BaselineCNN
+import os
 
 def train_model(data_loader, device, epochs=10, lr=0.001, n_classes=75):
     train_loader = data_loader
@@ -50,11 +51,10 @@ def train_model(data_loader, device, epochs=10, lr=0.001, n_classes=75):
             history['train_loss'].append(epoch_loss)
             history['train_acc'].append(epoch_acc)
             
-            # FALTA!!!
+            # FALTA!!! val e early stopping também
             history['val_loss'].append(0.0) 
             history['val_acc'].append(0.0)
             
         print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss / len(train_loader):.4f}")
-        
-    torch.save(model.state_dict(), 'src/baseline/baseline_weights.pth')
+    
     return model, history
