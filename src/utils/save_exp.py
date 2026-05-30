@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-def save_experiment(model, history, config, evaluator, base_dir):
+def save_experiment(model, history, config, base_dir):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(base_dir, f"run_{timestamp}")
     os.makedirs(run_dir, exist_ok=True)
@@ -27,13 +27,5 @@ def save_experiment(model, history, config, evaluator, base_dir):
         history_df = pd.DataFrame(history)
         history_path = os.path.join(run_dir, 'training_history.csv')
         history_df.to_csv(history_path, index_label='epoch')
-    
-    # Test
-    if evaluator:
-        report = evaluator.compute()
-        matrix_path = os.path.join(run_dir, 'confusion_matrix.png')
-        evaluator.plot_confusion_matrix(report)
-        plt.savefig(matrix_path)
-        plt.close()
-            
+                
     return run_dir
