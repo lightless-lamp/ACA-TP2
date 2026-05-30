@@ -1,0 +1,6 @@
+{
+    "augmentation": "none",
+    "batch_size": 32,
+    "epochs": 50,
+    "timestamp": "20260530_031308"
+}
