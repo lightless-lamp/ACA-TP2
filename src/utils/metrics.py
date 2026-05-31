@@ -159,43 +159,46 @@ def frechet_inception_distance(real_images, fake_images,
                                 batch_size=32, device="cpu"):
     """
     Frechet Inception Distance (FID) -- Heusel et al., 2017.
-
+ 
     Compares the distribution of pool3 InceptionV3 features between real and
     generated images by treating both as multivariate Gaussians:
-
+ 
         FID = ||mu_r - mu_f||^2
               + Tr( Sigma_r + Sigma_f - 2 * sqrt(Sigma_r @ Sigma_f) )
-
-    Lower FID is better.  For reliable estimates use >= 2 048 images per set.
-
+ 
+    Lower FID is better.
+    Note: statistical reliability improves with more images (ideally >= 2048),
+    but the function runs with any number of samples.
+ 
     Parameters
     ----------
     real_images : list of (C, H, W) float tensors, values in [0, 1]
     fake_images : list of (C, H, W) float tensors, values in [0, 1]
     batch_size  : InceptionV3 mini-batch size
     device      : 'cpu' or 'cuda'
-
+ 
     Returns
     -------
     fid : float
     """
     inception = _get_inception(device)
-
+ 
     feats_r = _extract(real_images, inception, "features", batch_size, device)
     feats_f = _extract(fake_images, inception, "features", batch_size, device)
-
+ 
     mu_r,    sigma_r = feats_r.mean(axis=0), np.cov(feats_r, rowvar=False)
     mu_f,    sigma_f = feats_f.mean(axis=0), np.cov(feats_f, rowvar=False)
-
+ 
     diff      = mu_r - mu_f
     sqrt_prod = _mat_sqrt(sigma_r @ sigma_f)
-
+ 
     # Discard negligible imaginary parts that arise from numerical noise
     if np.iscomplexobj(sqrt_prod):
         sqrt_prod = sqrt_prod.real
-
+ 
     fid = float(diff @ diff + np.trace(sigma_r + sigma_f - 2.0 * sqrt_prod))
     return fid
+
 
 
 # 3. Structural Similarity Index (SSIM)---------------------------------------
