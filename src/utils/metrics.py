@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
+from scipy.linalg import sqrtm
 
 
 
@@ -97,20 +98,6 @@ def _extract(images, inception, mode, batch_size, device):
 # Matrix square root via eigendecomposition  (avoids scipy)
 # ---------------------------------------------------------------------------
 
-def _mat_sqrt(A):
-    """
-    Square root of a symmetric positive semi-definite matrix.
-
-    Decomposition:  A = V D V^T  =>  sqrt(A) = V sqrt(D) V^T
-
-    numpy.linalg.eigh is used because it guarantees real eigenvalues for
-    symmetric matrices.  Small negative eigenvalues from floating-point
-    noise are clamped to zero before taking the square root.
-    """
-    vals, vecs = np.linalg.eigh(A)
-    vals = np.maximum(vals, 0.0)
-    return (vecs * np.sqrt(vals)) @ vecs.T
-
 
 # Inception Score (IS) ------------------------------------------------------
 
@@ -190,8 +177,7 @@ def frechet_inception_distance(real_images, fake_images,
     mu_f,    sigma_f = feats_f.mean(axis=0), np.cov(feats_f, rowvar=False)
  
     diff      = mu_r - mu_f
-    sqrt_prod = _mat_sqrt(sigma_r @ sigma_f)
- 
+    sqrt_prod, _ = sqrtm(sigma_r @ sigma_f, disp=False) 
     # Discard negligible imaginary parts that arise from numerical noise
     if np.iscomplexobj(sqrt_prod):
         sqrt_prod = sqrt_prod.real
