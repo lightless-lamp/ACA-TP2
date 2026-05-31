@@ -4,11 +4,18 @@ from PIL import Image
 from torch.utils import data
 
 class ButterflyDataset(data.Dataset):
-    def __init__(self, df, img_dir, transform=None):
+    def __init__(self, df, img_dir, transform=None, target_classes=None):
         self.img_labels = df.reset_index(drop=True)
         self.img_dir = img_dir
         self.transform = transform
 
+        # ---------------------------
+        if target_classes is not None:
+            df = df[df['label'].isin(target_classes)]
+            
+        self.img_labels = df.reset_index(drop=True)
+        # ---------------------------
+    
         self.classes = sorted(self.img_labels['label'].unique())
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
 
