@@ -20,9 +20,16 @@ def plot_cvae_losses(history, save=None):
     plt.grid(True)
     
     plt.subplot(1, 2, 2)
-    plt.plot(epochs, history['train_bce'], 'g-', label='Reconstrução (MSE)')
-    plt.plot(epochs, history['train_kld'], 'm-', label='Organização (KLD)')
-    plt.title('Componentes da Loss (Treino)')
+    plt.plot(epochs, history['train_recon'], 'g-', label='Reconstrução (MSE/L1)')
+    
+    has_kld = max(history['train_kld']) > 0
+    
+    if has_kld:
+        plt.plot(epochs, history['train_kld'], 'm-', label='Organização (KLD)')
+        plt.title('Componentes da Loss (Treino) - cVAE')
+    else:
+        plt.title('Componentes da Loss (Treino) - cAE Baseline')
+        
     plt.xlabel('Épocas')
     plt.ylabel('Loss')
     plt.legend()

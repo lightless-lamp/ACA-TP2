@@ -300,6 +300,8 @@ def frechet_inception_distance(real_images, fake_images,
     mu_f,    sigma_f = feats_f.mean(axis=0), np.cov(feats_f, rowvar=False)
 
     diff      = mu_r - mu_f
+
+    
     sqrt_prod = _mat_sqrt(sigma_r @ sigma_f)
 
     # Discard negligible imaginary parts that arise from numerical noise
@@ -308,6 +310,33 @@ def frechet_inception_distance(real_images, fake_images,
 
     fid = float(diff @ diff + np.trace(sigma_r + sigma_f - 2.0 * sqrt_prod))
     return fid
+    
+
+    '''
+    diff = mu_r - mu_f
+    sqrt_prod = _mat_sqrt(sigma_r @ sigma_f)
+
+    # --- CORREÇÃO DE ROBUSTEZ NUMÉRICA ---
+    # 1. Se surgirem números complexos devido a ruído de arredondamento,
+    # fazemos uma verificação na diagonal antes de descartar a parte imaginária.
+    if np.iscomplexobj(sqrt_prod):
+        # Se a parte imaginária for muito grande, avisa (pode indicar poucas imagens)
+        if not np.allclose(np.diagonal(sqrt_prod).imag, 0, atol=1e-3):
+            print("⚠️ Aviso: Parte imaginária detetada no FID devido a instabilidade numérica.")
+        sqrt_prod = sqrt_prod.real
+
+    # 2. Calcular o FID garantindo que o traço não colapse
+    trace_term = np.trace(sigma_r + sigma_f - 2.0 * sqrt_prod)
+    fid = float(diff @ diff + trace_term)
+    
+    # 3. Salvaguarda final: se o FID der um valor negativo micro (ex: -1e-5 ou -0.5), 
+    # é puramente ruído numérico de matrizes idênticas. Forçamos a 0.0.
+    if fid < 0:
+        # Se for um negativo muito grande, vale a pena investigar o tamanho do dataset,
+        # mas se for próximo de zero, ajustamos para zero.
+        fid = max(0.0, fid)
+    return fid
+    '''
 
 
 # Structural Similarity Index (SSIM) ----------------------------------------

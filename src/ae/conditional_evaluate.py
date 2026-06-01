@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from src.utils.metrics import inception_score, frechet_inception_distance, mean_ssim
+from src.utils.metrics2 import inception_score, frechet_inception_distance, mean_ssim
 
 def evaluate(model, dataloader, device, num_imagens=256):
     model.eval()
@@ -14,9 +14,14 @@ def evaluate(model, dataloader, device, num_imagens=256):
         for inputs, labels in dataloader:
             inputs = inputs.to(device)
             labels = labels.to(device)
+
+            outputs = model(inputs, labels)
             
-            reconstructed, _, _ = model(inputs, labels)
-            
+            if isinstance(outputs, tuple):
+                reconstructed = outputs[0]
+            else:
+                reconstructed = outputs
+
             for i in range(inputs.size(0)):
                 if len(list_reais) >= num_imagens:
                     break
@@ -35,17 +40,13 @@ def evaluate(model, dataloader, device, num_imagens=256):
 
     print("Calculating metrics")
     
-    # 2. CALCULAR INCEPTION SCORE (Usa as imagens sintéticas)
     is_mean, is_std = inception_score(list_sinteticas, batch_size=32, splits=4, device=device)
     
-    # 3. CALCULAR FRECHET INCEPTION DISTANCE (Compara reais vs sintéticas)
     fid_value = frechet_inception_distance(list_reais, list_sinteticas, batch_size=32, device=device)
     
-    # 4. CALCULAR STRUCTURAL SIMILARITY INDEX (SSIM)
     ssim_value = mean_ssim(list_reais, list_sinteticas)
     
-    # 5. MOSTRAR RESULTADOS
-    print("\n================ CVAE Metrics ================")
+    print("\n================ Metrics ================")
     print(f"Inception Score (IS)                  : {is_mean:.4f} ± {is_std:.4f}  (Mais alto é melhor)")
     print(f"Frechet Inception Distance (FID)       : {fid_value:.4f}          (Mais baixo é melhor)")
     print(f"Structural Similarity Index (SSIM)     : {ssim_value:.4f}          (Mais próximo de 1 é melhor)")

@@ -26,7 +26,7 @@ def save_cvae_experiment(model, history, config, base_dir, metrics=None, excel_n
     final_val_loss = None
     epochs_executed = 0
     
-    if history:
+    if history is not None:
         history_df = pd.DataFrame(history)
         history_path = os.path.join(run_dir, 'training_history.csv')
         history_df.to_csv(history_path, index_label='epoch')
@@ -88,3 +88,22 @@ def save_cvae_experiment(model, history, config, base_dir, metrics=None, excel_n
             
     
     return run_dir
+
+def carregar_pesos_cvae(model, device, run_dir_path, file_name='cvae_model_weights.pth'):
+    """
+    Carrega os pesos salvos pela função 'save_cvae_experiment' diretamente 
+    para o modelo, permitindo fazer plots sem repetir o treino.
+    """
+    full_path = os.path.join(run_dir_path, file_name)
+    
+    if not os.path.exists(full_path):
+        raise FileNotFoundError(f"Weight file not found in {full_path}")
+        
+    state_dict = torch.load(full_path, map_location=device)
+    
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+    
+    print(f"Model recovered from {full_path}")
+    return model
