@@ -1,3 +1,5 @@
 data/
 .DS_Store
+__pycache__/notebooks/checkpoints/
 __pycache__/
+src/__pycache__/
