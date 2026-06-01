@@ -1,0 +1,13 @@
+{
+    "model_architecture": "ConditionalAE",
+    "epochs": 100,
+    "stop": 5,
+    "latent_dim": 128,
+    "loss_function": "mse",
+    "timestamp": "20260601_190504",
+    "final_metrics": {
+        "is_mean": 3.6085894107818604,
+        "fid": 188.4464034009858,
+        "ssim": 0.5436655022837855
+    }
+}
