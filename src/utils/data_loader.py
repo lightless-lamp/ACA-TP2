@@ -9,14 +9,23 @@ class ButterflyDataset(data.Dataset):
         self.img_dir = img_dir
         self.transform = transform
 
-        # ---------------------------
+        # # ---------------------------
+        # if target_classes is not None:
+        #     df = df[df['label'].isin(target_classes)]
+            
+        # self.img_labels = df.reset_index(drop=True)
+        # # ---------------------------
+    
+        # self.classes = sorted(self.img_labels['label'].unique())
+        # self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
+
         if target_classes is not None:
             df = df[df['label'].isin(target_classes)]
-            
+            self.classes = target_classes                          # ← ordem do config
+        else:
+            self.classes = sorted(df['label'].unique())
+
         self.img_labels = df.reset_index(drop=True)
-        # ---------------------------
-    
-        self.classes = sorted(self.img_labels['label'].unique())
         self.class_to_idx = {cls_name: idx for idx, cls_name in enumerate(self.classes)}
 
     def __len__(self):

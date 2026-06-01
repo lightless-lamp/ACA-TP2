@@ -1,10 +1,67 @@
+import time
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+
+from scipy.linalg import sqrtm
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import models
-from scipy.linalg import sqrtm
+from torchvision import models, transforms
 
+
+# Image loader — reads a folder of images from disk ------------------------------------------
+
+_SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
+
+_DEFAULT_TRANSFORM = transforms.Compose([
+    transforms.ToTensor(),   # HWC uint8 [0,255] -> CHW float [0,1]
+])
+
+
+def load_images_from_folder(
+    folder    : Union[str, Path],
+    transform : Optional[object] = None,
+    max_images: Optional[int]    = None,
+    verbose   : bool              = True,
+) -> List[torch.Tensor]:
+    
+    from PIL import Image  # lazy import — only needed for loading
+
+    folder = Path(folder)
+    if not folder.exists():
+        raise FileNotFoundError(f"Image folder not found: {folder}")
+    if not folder.is_dir():
+        raise NotADirectoryError(f"Path is not a directory: {folder}")
+
+    paths = sorted(
+        p for p in folder.iterdir()
+        if p.suffix.lower() in _SUPPORTED_EXTENSIONS
+    )
+
+    if not paths:
+        raise ValueError(
+            f"No supported images found in '{folder}'. "
+            f"Supported extensions: {_SUPPORTED_EXTENSIONS}"
+        )
+
+    if max_images is not None:
+        paths = paths[:max_images]
+
+    tf = transform if transform is not None else _DEFAULT_TRANSFORM
+
+    images = []
+    for p in paths:
+        img = Image.open(p).convert("RGB")
+        images.append(tf(img))
+
+    if verbose:
+        print(f"Loaded {len(images)} images from '{folder}'")
+
+    return images
 
 
 # InceptionV3 ---------------------------------------------------------------------------
@@ -94,35 +151,11 @@ def _extract(images, inception, mode, batch_size, device):
     return np.concatenate(collect, axis=0)
 
 
-# ---------------------------------------------------------------------------
-# Matrix square root via eigendecomposition  (avoids scipy)
-# ---------------------------------------------------------------------------
-
 
 # Inception Score (IS) ------------------------------------------------------
 
 def inception_score(images, batch_size=32, splits=10, device="cpu"):
-    """
-    Inception Score (IS) -- Salimans et al., 2016.
 
-    Measures both quality (sharpness) and diversity of generated images.
-
-        IS = exp( E_x [ KL( p(y|x) || p(y) ) ] )
-
-    where p(y|x) is the class-conditional distribution from InceptionV3 and
-    p(y) = E_x[p(y|x)] is the marginal.  Higher IS is better.
-
-    Parameters
-    ----------
-    images     : list of (C, H, W) float tensors, values in [0, 1]
-    batch_size : InceptionV3 mini-batch size
-    splits     : number of equal chunks used to estimate mean and std of IS
-    device     : 'cpu' or 'cuda'
-
-    Returns
-    -------
-    (mean_is, std_is) : (float, float)
-    """
     inception = _get_inception(device)
     probs     = _extract(images, inception, "probs", batch_size, device)  # (N, 1000)
 
@@ -140,54 +173,33 @@ def inception_score(images, batch_size=32, splits=10, device="cpu"):
     return float(np.mean(scores)), float(np.std(scores))
 
 
-# 2. Frechet Inception Distance (FID)
+# Frechet Inception Distance (FID) ------------------------------------------
 
 def frechet_inception_distance(real_images, fake_images,
                                 batch_size=32, device="cpu"):
-    """
-    Frechet Inception Distance (FID) -- Heusel et al., 2017.
- 
-    Compares the distribution of pool3 InceptionV3 features between real and
-    generated images by treating both as multivariate Gaussians:
- 
-        FID = ||mu_r - mu_f||^2
-              + Tr( Sigma_r + Sigma_f - 2 * sqrt(Sigma_r @ Sigma_f) )
- 
-    Lower FID is better.
-    Note: statistical reliability improves with more images (ideally >= 2048),
-    but the function runs with any number of samples.
- 
-    Parameters
-    ----------
-    real_images : list of (C, H, W) float tensors, values in [0, 1]
-    fake_images : list of (C, H, W) float tensors, values in [0, 1]
-    batch_size  : InceptionV3 mini-batch size
-    device      : 'cpu' or 'cuda'
- 
-    Returns
-    -------
-    fid : float
-    """
+
     inception = _get_inception(device)
- 
+
     feats_r = _extract(real_images, inception, "features", batch_size, device)
     feats_f = _extract(fake_images, inception, "features", batch_size, device)
- 
+
     mu_r,    sigma_r = feats_r.mean(axis=0), np.cov(feats_r, rowvar=False)
     mu_f,    sigma_f = feats_f.mean(axis=0), np.cov(feats_f, rowvar=False)
- 
+
     diff      = mu_r - mu_f
-    sqrt_prod, _ = sqrtm(sigma_r @ sigma_f, disp=False) 
+
+    
+    sqrt_prod, _ = sqrtm(sigma_r @ sigma_f, disp=False)
+
     # Discard negligible imaginary parts that arise from numerical noise
     if np.iscomplexobj(sqrt_prod):
         sqrt_prod = sqrt_prod.real
- 
+
     fid = float(diff @ diff + np.trace(sigma_r + sigma_f - 2.0 * sqrt_prod))
     return fid
 
 
-
-# 3. Structural Similarity Index (SSIM)---------------------------------------
+# Structural Similarity Index (SSIM) ----------------------------------------
 
 def _gaussian_kernel(size=11, sigma=1.5):
     """
@@ -203,34 +215,8 @@ def _gaussian_kernel(size=11, sigma=1.5):
 
 
 def ssim(img1, img2, window_size=11, sigma=1.5, K1=0.01, K2=0.03, L=1.0):
-    """
-    Structural Similarity Index (SSIM) -- Wang et al., 2004.
 
-    Quantifies perceptual similarity between two images by comparing local
-    luminance, contrast, and structure with a Gaussian sliding window:
-
-        SSIM(x, y) = (2*mu_x*mu_y + C1)(2*sigma_xy + C2)
-                     ------------------------------------------
-                     (mu_x^2 + mu_y^2 + C1)(sigma_x^2 + sigma_y^2 + C2)
-
-    where mu and sigma are local Gaussian-weighted means / standard deviations
-    and sigma_xy is the local cross-covariance.
-    C1 = (K1*L)^2, C2 = (K2*L)^2 are stability constants.
-
-    Returns values in [-1, 1]; 1 means identical images.  Higher is better.
-
-    Parameters
-    ----------
-    img1, img2  : torch tensors (C, H, W) or (B, C, H, W), values in [0, 1]
-    window_size : size of the Gaussian kernel  (paper default: 11)
-    sigma       : std of the Gaussian kernel   (paper default: 1.5)
-    K1, K2      : stability constants          (paper defaults: 0.01, 0.03)
-    L           : dynamic range (1.0 for [0, 1] images)
-
-    Returns
-    -------
-    ssim_value : float
-    """
+   
     if img1.dim() == 3:
         img1 = img1.unsqueeze(0)
         img2 = img2.unsqueeze(0)
@@ -266,19 +252,264 @@ def ssim(img1, img2, window_size=11, sigma=1.5, K1=0.01, K2=0.03, L=1.0):
 
 
 def mean_ssim(real_images, fake_images, **kwargs):
-    """
-    Average SSIM over paired (real, fake) images.
-
-    Parameters
-    ----------
-    real_images, fake_images : lists of (C, H, W) tensors, values in [0, 1]
-    **kwargs                 : forwarded to ssim()
-
-    Returns
-    -------
-    mean_ssim_value : float
-    """
     if len(real_images) != len(fake_images):
         raise ValueError("real_images and fake_images must have the same length")
     scores = [ssim(r, f, **kwargs) for r, f in zip(real_images, fake_images)]
     return float(np.mean(scores))
+
+
+# ---------------------------------------------------------------------------
+# EvaluationResult — structured container for metric outputs
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EvaluationResult:
+    model_name : str
+    is_mean    : float
+    is_std     : float
+    fid        : float
+    mean_ssim  : float
+    n_samples  : int
+    elapsed_sec: float
+    notes      : str = ""
+
+    def summary(self) -> str:
+        """One-line summary string."""
+        return (
+            f"[{self.model_name}]  "
+            f"IS={self.is_mean:.3f}±{self.is_std:.3f}  "
+            f"FID={self.fid:.2f}  "
+            f"SSIM={self.mean_ssim:.4f}  "
+            f"(n={self.n_samples}, {self.elapsed_sec:.1f}s)"
+        )
+
+    def to_dict(self) -> dict:
+        """Serialise to a plain dict (useful for logging / JSON export)."""
+        return {
+            "model_name" : self.model_name,
+            "IS_mean"    : round(self.is_mean,  4),
+            "IS_std"     : round(self.is_std,   4),
+            "FID"        : round(self.fid,      4),
+            "SSIM"       : round(self.mean_ssim,4),
+            "n_samples"  : self.n_samples,
+            "elapsed_sec": round(self.elapsed_sec, 2),
+            "notes"      : self.notes,
+        }
+
+
+# ---------------------------------------------------------------------------
+# evaluate_model — single entry point: accepts folder paths
+# ---------------------------------------------------------------------------
+
+def evaluate_model(
+    real_dir   : Union[str, Path],
+    fake_dir   : Union[str, Path],
+    model_name : str  = "model",
+    batch_size : int  = 32,
+    is_splits  : int  = 10,
+    max_images : Optional[int] = None,
+    transform  : Optional[object] = None,
+    device     : str  = "cpu",
+    verbose    : bool = True,
+    notes      : str  = "",
+) -> EvaluationResult:
+
+    t0 = time.perf_counter()
+
+    if verbose:
+        print(f"[{model_name}] Loading images …", flush=True)
+
+    real_images = load_images_from_folder(
+        real_dir, transform=transform, max_images=max_images, verbose=verbose
+    )
+    fake_images = load_images_from_folder(
+        fake_dir, transform=transform, max_images=max_images, verbose=verbose
+    )
+
+    # Align lengths for paired SSIM
+    n = min(len(real_images), len(fake_images))
+    if len(real_images) != len(fake_images):
+        warnings.warn(
+            f"[{model_name}] Folder sizes differ "
+            f"(real={len(real_images)}, fake={len(fake_images)}). "
+            f"SSIM will use the first {n} pairs.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if len(fake_images) < 2048:
+        warnings.warn(
+            f"[{model_name}] Only {len(fake_images)} samples available. "
+            "FID is unreliable below ~2 048 samples.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    # ---- IS ---------------------------------------------------------------
+    if verbose:
+        print(f"[{model_name}] Computing Inception Score …", flush=True)
+    is_mean, is_std = inception_score(
+        fake_images, batch_size=batch_size, splits=is_splits, device=device
+    )
+
+    # ---- FID --------------------------------------------------------------
+    if verbose:
+        print(f"[{model_name}] Computing FID …", flush=True)
+    fid = frechet_inception_distance(
+        real_images, fake_images, batch_size=batch_size, device=device
+    )
+
+    # ---- SSIM -------------------------------------------------------------
+    if verbose:
+        print(f"[{model_name}] Computing SSIM …", flush=True)
+    ssim_value = mean_ssim(real_images[:n], fake_images[:n])
+
+    elapsed = time.perf_counter() - t0
+
+    result = EvaluationResult(
+        model_name  = model_name,
+        is_mean     = is_mean,
+        is_std      = is_std,
+        fid         = fid,
+        mean_ssim   = ssim_value,
+        n_samples   = len(fake_images),
+        elapsed_sec = elapsed,
+        notes       = notes,
+    )
+
+    if verbose:
+        print(result.summary())
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# ModelEvaluator — compare multiple generative models side-by-side
+# ---------------------------------------------------------------------------
+
+class ModelEvaluator:
+    
+
+    def __init__(
+        self,
+        real_dir   : Union[str, Path],
+        device     : str  = "cpu",
+        batch_size : int  = 32,
+        is_splits  : int  = 10,
+        max_images : Optional[int] = None,
+        transform  : Optional[object] = None,
+        verbose    : bool = True,
+    ):
+        self.real_dir   = Path(real_dir)
+        self.device     = device
+        self.batch_size = batch_size
+        self.is_splits  = is_splits
+        self.max_images = max_images
+        self.transform  = transform
+        self.verbose    = verbose
+        self.results: Dict[str, EvaluationResult] = {}
+
+    # ------------------------------------------------------------------
+
+    def add_model(
+        self,
+        model_name : str,
+        fake_dir   : Union[str, Path],
+        notes      : str = "",
+    ) -> EvaluationResult:
+        
+        if model_name in self.results:
+            warnings.warn(
+                f"Model '{model_name}' already evaluated. Overwriting.",
+                UserWarning,
+                stacklevel=2,
+            )
+
+        result = evaluate_model(
+            real_dir   = self.real_dir,
+            fake_dir   = fake_dir,
+            model_name = model_name,
+            batch_size = self.batch_size,
+            is_splits  = self.is_splits,
+            max_images = self.max_images,
+            transform  = self.transform,
+            device     = self.device,
+            verbose    = self.verbose,
+            notes      = notes,
+        )
+        self.results[model_name] = result
+        return result
+
+    # ------------------------------------------------------------------
+
+    def report(self, sort_by: str = "FID") -> str:
+        
+        if not self.results:
+            return "(No models evaluated yet.)"
+
+        rows = list(self.results.values())
+
+        _sort_cfg = {
+            "FID" : (lambda r: r.fid,       False),
+            "IS"  : (lambda r: r.is_mean,   True ),
+            "SSIM": (lambda r: r.mean_ssim, True ),
+        }
+        key_fn, reverse = _sort_cfg.get(sort_by.upper(), (lambda r: r.fid, False))
+        rows.sort(key=key_fn, reverse=reverse)
+
+        header = (
+            f"{'Model':<20}  {'IS (↑)':>14}  {'FID (↓)':>10}  "
+            f"{'SSIM (↑)':>10}  {'N':>6}  {'Time':>7}"
+        )
+        sep   = "-" * len(header)
+        lines = [sep, header, sep]
+
+        for r in rows:
+            lines.append(
+                f"{r.model_name:<20}  "
+                f"{r.is_mean:>7.3f}±{r.is_std:<6.3f}  "
+                f"{r.fid:>10.2f}  "
+                f"{r.mean_ssim:>10.4f}  "
+                f"{r.n_samples:>6}  "
+                f"{r.elapsed_sec:>6.1f}s"
+            )
+
+        lines.append(sep)
+        lines.append(
+            f"Sorted by {sort_by.upper()}  |  higher is better  |   lower is better"
+        )
+
+        table = "\n".join(lines)
+        print(table)
+        return table
+
+    # ------------------------------------------------------------------
+
+    def best(self, metric: str = "FID") -> Optional[EvaluationResult]:
+       
+        if not self.results:
+            return None
+
+        m = metric.upper()
+        if m == "FID":
+            return min(self.results.values(), key=lambda r: r.fid)
+        elif m == "IS":
+            return max(self.results.values(), key=lambda r: r.is_mean)
+        elif m == "SSIM":
+            return max(self.results.values(), key=lambda r: r.mean_ssim)
+        else:
+            raise ValueError(f"Unknown metric '{metric}'. Choose FID, IS, or SSIM.")
+
+    # ------------------------------------------------------------------
+
+    def to_dataframe(self):
+        try:
+            import pandas as pd
+        except ImportError as e:
+            raise ImportError(
+                "pandas is required for to_dataframe(). "
+                "Install it with: pip install pandas"
+            ) from e
+
+        rows = [r.to_dict() for r in self.results.values()]
+        return pd.DataFrame(rows).set_index("model_name")
