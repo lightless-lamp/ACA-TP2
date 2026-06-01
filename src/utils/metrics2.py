@@ -1,33 +1,3 @@
-"""
-metrics.py — Generative Model Evaluation Metrics
-=================================================
-Implements IS, FID, and SSIM for evaluating VAE, GAN, and Diffusion models.
-
-Images are loaded from folders on disk.  Generation stays in the notebooks.
-
-Public API
-----------
-load_images_from_folder(folder, ...)             -> list of (C, H, W) tensors
-inception_score(images, ...)                     -> (mean_is, std_is)
-frechet_inception_distance(real, fake, ...)      -> fid
-ssim(img1, img2, ...)                            -> ssim_value
-mean_ssim(real_images, fake_images, ...)         -> mean_ssim_value
-evaluate_model(real_dir, fake_dir, ...)          -> EvaluationResult
-ModelEvaluator                                   -> compare multiple models
-
-Quick start
------------
-    from metrics import ModelEvaluator
-
-    evaluator = ModelEvaluator(real_dir="data/real", device="cuda")
-    evaluator.add_model("VAE",       fake_dir="outputs/vae")
-    evaluator.add_model("GAN",       fake_dir="outputs/gan")
-    evaluator.add_model("Diffusion", fake_dir="outputs/diffusion")
-
-    evaluator.report()               # prints a formatted comparison table
-    df = evaluator.to_dataframe()    # pandas DataFrame (optional)
-"""
-
 import time
 import warnings
 from dataclasses import dataclass
@@ -43,9 +13,7 @@ import torch.nn.functional as F
 from torchvision import models, transforms
 
 
-# ---------------------------------------------------------------------------
-# Image loader — reads a folder of images from disk
-# ---------------------------------------------------------------------------
+# Image loader — reads a folder of images from disk ------------------------------------------
 
 _SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 
@@ -205,11 +173,6 @@ def _extract(images, inception, mode, batch_size, device):
     return np.concatenate(collect, axis=0)
 
 
-# ---------------------------------------------------------------------------
-# Matrix square root via eigendecomposition  (avoids scipy)
-# ---------------------------------------------------------------------------
-
-
 
 # Inception Score (IS) ------------------------------------------------------
 
@@ -299,33 +262,6 @@ def frechet_inception_distance(real_images, fake_images,
 
     fid = float(diff @ diff + np.trace(sigma_r + sigma_f - 2.0 * sqrt_prod))
     return fid
-    
-
-    '''
-    diff = mu_r - mu_f
-    sqrt_prod = _mat_sqrt(sigma_r @ sigma_f)
-
-    # --- CORREÇÃO DE ROBUSTEZ NUMÉRICA ---
-    # 1. Se surgirem números complexos devido a ruído de arredondamento,
-    # fazemos uma verificação na diagonal antes de descartar a parte imaginária.
-    if np.iscomplexobj(sqrt_prod):
-        # Se a parte imaginária for muito grande, avisa (pode indicar poucas imagens)
-        if not np.allclose(np.diagonal(sqrt_prod).imag, 0, atol=1e-3):
-            print("⚠️ Aviso: Parte imaginária detetada no FID devido a instabilidade numérica.")
-        sqrt_prod = sqrt_prod.real
-
-    # 2. Calcular o FID garantindo que o traço não colapse
-    trace_term = np.trace(sigma_r + sigma_f - 2.0 * sqrt_prod)
-    fid = float(diff @ diff + trace_term)
-    
-    # 3. Salvaguarda final: se o FID der um valor negativo micro (ex: -1e-5 ou -0.5), 
-    # é puramente ruído numérico de matrizes idênticas. Forçamos a 0.0.
-    if fid < 0:
-        # Se for um negativo muito grande, vale a pena investigar o tamanho do dataset,
-        # mas se for próximo de zero, ajustamos para zero.
-        fid = max(0.0, fid)
-    return fid
-    '''
 
 
 # Structural Similarity Index (SSIM) ----------------------------------------
@@ -733,7 +669,7 @@ class ModelEvaluator:
 
         lines.append(sep)
         lines.append(
-            f"Sorted by {sort_by.upper()}  |  ↑ higher is better  |  ↓ lower is better"
+            f"Sorted by {sort_by.upper()}  |  higher is better  |   lower is better"
         )
 
         table = "\n".join(lines)
@@ -770,13 +706,6 @@ class ModelEvaluator:
     # ------------------------------------------------------------------
 
     def to_dataframe(self):
-        """
-        Export results as a pandas DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame  (requires pandas: pip install pandas)
-        """
         try:
             import pandas as pd
         except ImportError as e:
