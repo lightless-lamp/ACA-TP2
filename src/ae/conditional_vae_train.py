@@ -3,19 +3,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 import copy
 
-def cvae_loss_function(recon_x, x, mu, logvar):
-    """
-    Calcula a perda combinada do VAE: Reconstrução + Divergência KL.
-    """
-    mse_loss = F.mse_loss(recon_x, x, reduction='sum')
+
+def cvae_loss_function(recon_x, x, mu, logvar, function='bce', beta=1.0):
+    if function == 'bce':
+        # Nota: Para usar BCE, recon_x DEVE estar entre [0, 1] (usa nn.Sigmoid no final do decoder)
+        # e as imagens de treino originais (x) também devem estar mapeadas para [0, 1].
+        recon_loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
+        
+    elif function == 'mse':
+        # O MSE tradicional tende a borrar as imagens, mas funciona se o beta for ajustado.
+        recon_loss = F.mse_loss(recon_x, x, reduction='sum')
+        
+    elif function == 'l1':
+        # O L1 (Mean Absolute Error) foca na diferença absoluta pixel a pixel.
+        # Costuma gerar imagens MENOS borradas do que o MSE em VAEs!
+        recon_loss = F.l1_loss(recon_x, x, reduction='sum')
+        
+    else:
+        raise ValueError(f"Função '{function}' não reconhecida. Escolha entre 'bce', 'mse' ou 'l1'.")
     
-    # 2. Divergência de Kullback-Leibler (KLD)
     kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    total_loss = recon_loss + (beta * kld_loss)
     
-    return mse_loss + kld_loss, mse_loss, kld_loss
+    return total_loss, recon_loss, kld_loss
 
 
-def train_cvae(model, train_loader, val_loader, device, epochs=20, lr=0.001, stop=5):
+def train_cvae(model, train_loader, val_loader, device, epochs=20, lr=0.001, stop=5, loss_function="bce"):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     model = model.to(device)
     
@@ -41,9 +54,9 @@ def train_cvae(model, train_loader, val_loader, device, epochs=20, lr=0.001, sto
             
             # O CVAE recebe a imagem E a label no forward!
             reconstructed, mu, logvar = model(inputs, labels)
-            
+
             # Calcula as perdas
-            loss, bce, kld = cvae_loss_function(reconstructed, inputs, mu, logvar)
+            loss, bce, kld = cvae_loss_function(reconstructed, inputs, mu, logvar, loss_function, beta=1.0)
             
             loss.backward()
             optimizer.step()

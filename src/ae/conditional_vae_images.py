@@ -36,7 +36,7 @@ def plot_cvae_losses(history, save=None):
         
     plt.show()
     
-def comparar_duas_classes(model, device, classe_A, classe_B, class_names=None, num_samples=5):
+def comparar_duas_classes(model, device, classe_A, classe_B, class_names=None, num_samples=5, save=None):
     model.eval()
     
     imagens_A = model.generate_sample(device=device, label=classe_A, num_samples=num_samples)
@@ -68,9 +68,14 @@ def comparar_duas_classes(model, device, classe_A, classe_B, class_names=None, n
                             ha='right', va='center', rotation=0)
             
     plt.tight_layout()
+
+    if save:
+        plt.savefig(save, bbox_inches='tight', dpi=300)
+        print(f"Comparison saved in {save}")
+
     plt.show()
 
-def comparar_reais_vs_sinteticas(model, device, dataloader, classe_A, classe_B, class_names=None, num_samples = 3):
+def comparar_reais_vs_sinteticas(model, device, dataloader, classe_A, classe_B, class_names=None, num_samples = 3, save=None):
     """
     Desenha uma grelha comparando Imagens Reais vs Sintéticas para duas classes.
     """
@@ -122,4 +127,9 @@ def comparar_reais_vs_sinteticas(model, device, dataloader, classe_A, classe_B, 
     axes[3, 0].text(-10, 32, f"{nome_B}\n(CVAE)", fontsize=11, fontweight='bold', ha='right', va='center', color='green')
 
     plt.tight_layout()
+
+    if save:
+        plt.savefig(save, bbox_inches='tight', dpi=300)
+        print(f"Comparison saved in {save}")
+    
     plt.show()
