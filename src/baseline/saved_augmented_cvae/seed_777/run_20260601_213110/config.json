@@ -1,0 +1,7 @@
+{
+    "experiment_type": "cvae",
+    "batch_size": 32,
+    "epochs": 100,
+    "seed": 777,
+    "timestamp": "20260601_213110"
+}
