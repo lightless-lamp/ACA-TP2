@@ -1,0 +1,8 @@
+{
+    "model_architecture": "ConditionalVAE_1",
+    "epochs": 100,
+    "stop": 5,
+    "latent_dim": 128,
+    "loss_function": "mse",
+    "timestamp": "20260601_024511"
+}

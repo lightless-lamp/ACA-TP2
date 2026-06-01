@@ -1,0 +1,14 @@
+{
+    "model_architecture": "ConditionalVAE_beta4",
+    "epochs": 100,
+    "stop": 5,
+    "latent_dim": 128,
+    "loss_function": "mse",
+    "beta": 4,
+    "timestamp": "20260601_035514",
+    "final_metrics": {
+        "is_mean": 3.323111057281494,
+        "fid": -253.1603428061626,
+        "ssim": 0.10674822455313972
+    }
+}
